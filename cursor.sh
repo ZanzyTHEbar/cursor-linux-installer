@@ -42,6 +42,13 @@ function check_fuse() {
         echo "  - Arch Linux: ${cmd_prefix}pacman -S fuse2"
         exit 1
     fi
+
+    # Verify FUSE2 is functional
+    if ! fusermount -V >/dev/null 2>&1; then
+        echo "Warning: FUSE2 verification failed. AppImage may not run." >&2
+        return 1
+    fi
+    echo "FUSE2 is ready."
 }
 
 function get_arch() {
@@ -82,45 +89,43 @@ function get_install_dir() {
 
 function get_fallback_download_info() {
     local arch=$(get_arch)
-
-    # this AppImage is potentially older than expected, see
-    # https://github.com/watzon/cursor-linux-installer/issues/5
-    echo "MESSAGE=$1"
-    echo "URL=https://downloader.cursor.sh/linux/appImage/$arch"
-    echo "VERSION=fallback"
-    return 1
+    local fallback_hash="d750e54bba5cffada6d7b3d18e5688ba5e944ad9"  # From 1.6.27 (Sep 17, 2025; update periodically)
+    local fallback_version="1.6.27"
+    echo "URL=https://downloads.cursor.com/production/$fallback_hash/linux/$arch/Cursor-$fallback_version-${arch}.AppImage"
+    echo "VERSION=$fallback_version"
+    return 1  # Still error, but usable URL
 }
 
 function get_download_info() {
-    if ! which jq >/dev/null 2>&1; then
-        get_fallback_download_info "jq not available"
-        return 1
-    fi
-
-    local temp_file=$(mktemp)
+    local temp_html=$(mktemp)
     local release_track=${1:-stable} # Default to stable if not specified
-    local api_url="https://www.cursor.com/api/download?platform=linux-$(get_arch)&releaseTrack=$release_track"
+    local arch=$(get_arch)  # x64 or arm64
+    local platform="linux-${arch}"
+    local api_url="https://cursor.com/api/download?platform=$platform&releaseTrack=$release_track"
 
     echo "Fetching download info for $release_track track..."
-    if ! curl -sL "$api_url" -o "$temp_file"; then
-        rm -f "$temp_file"
+    if ! curl -sL "$api_url" -o "$temp_html"; then
+        rm -f "$temp_html"
         get_fallback_download_info "curl failed on $api_url"
         return 1
     fi
 
-    if ! download_url=$(jq -er '.downloadUrl' "$temp_file"); then
-        rm -f "$temp_file"
-        get_fallback_download_info "jq failed: downloadUrl not found in JSON response"
+    # Scrape for AppImage URL (matches pattern in UI hrefs)
+    local download_url=$(grep -o 'https://downloads\.cursor\.com/[^[:space:]]*\.AppImage' "$temp_html" | head -1 | sed 's/["'\'']\?$//')  # Strip quotes/trailing
+
+    rm -f "$temp_html"
+
+    if [ -z "$download_url" ]; then
+        get_fallback_download_info "No AppImage URL found in response"
         return 1
     fi
 
-    if ! version=$(jq -er '.version' "$temp_file"); then
-        rm -f "$temp_file"
-        get_fallback_download_info "jq failed: version not found in JSON response"
-        return 1
-    fi
+    # Extract version from filename (e.g., Cursor-1.6.35-x86_64.AppImage → 1.6.35)
+    local version=$(basename "$download_url" | sed -E 's/.*Cursor-([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 
-    rm -f "$temp_file"
+    if [ -z "$version" ]; then
+        version="unknown"  # Rare fallback
+    fi
 
     echo "URL=$download_url"
     echo "VERSION=$version"
@@ -155,6 +160,15 @@ function install_cursor() {
 
     chmod +x "$temp_file"
     mv "$temp_file" "$install_dir/cursor.appimage"
+
+    # Ensure execution permissions persist post-move (robust against FS quirks)
+    chmod +x "$install_dir/cursor.appimage"
+    if [ -x "$install_dir/cursor.appimage" ]; then
+        echo "Execution permissions confirmed for $install_dir/cursor.appimage"
+    else
+        echo "Warning: Failed to set execution permissions—check filesystem." >&2
+        return 1
+    fi
 
     # Store version information in a simple file
     echo "$version" >"$install_dir/.cursor_version"
