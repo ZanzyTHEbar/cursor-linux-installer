@@ -299,7 +299,7 @@ function launch_cursor() {
     sleep 1
 
     # Check if the process is still running
-    if ! kill -0 "$pid" 2>&1; then
+    if ! kill -0 "$pid" 2>/dev/null; then
         echo "Error: Cursor AppImage failed to start. Check the log for details."
         cat "$log_file"
     else
