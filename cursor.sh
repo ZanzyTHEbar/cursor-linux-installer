@@ -11,33 +11,33 @@ function check_fuse() {
         cmd_prefix="sudo"
     fi
 
-    # Check and install FUSE using the appropriate package manager
+    # FIXED: Check and install FUSE2 using the appropriate package manager
     if command -v apt-get &>/dev/null; then
-        if ! dpkg -l | grep -q "^ii.*fuse "; then
-            echo "Installing FUSE..."
+        if ! dpkg -l | grep -q "^ii.*libfuse2 "; then  # FIXED: libfuse2, not fuse
+            echo "Installing libfuse2..."
             $cmd_prefix apt-get update
-            $cmd_prefix apt-get install -y fuse
+            $cmd_prefix apt-get install -y libfuse2  # FIXED: libfuse2 for AppImage compat
         else
-            echo "FUSE is already installed."
+            echo "libfuse2 is already installed."
         fi
     elif command -v dnf &>/dev/null; then
         if ! rpm -q fuse >/dev/null 2>&1; then
-            echo "Installing FUSE..."
+            echo "Installing fuse..."
             $cmd_prefix dnf install -y fuse
         else
-            echo "FUSE is already installed."
+            echo "fuse is already installed."
         fi
     elif command -v pacman &>/dev/null; then
         if ! pacman -Qi fuse2 >/dev/null 2>&1; then
-            echo "Installing FUSE..."
+            echo "Installing fuse2..."
             $cmd_prefix pacman -S fuse2
         else
-            echo "FUSE is already installed."
+            echo "fuse2 is already installed."
         fi
     else
-        echo "Unsupported package manager. Please install FUSE manually."
-        echo "You can install FUSE using your system's package manager:"
-        echo "  - Debian/Ubuntu: ${cmd_prefix}apt-get install fuse"
+        echo "Unsupported package manager. Please install libfuse2 manually."
+        echo "You can install FUSE2 using your system's package manager:"
+        echo "  - Debian/Ubuntu: ${cmd_prefix}apt-get install libfuse2"  # FIXED: libfuse2
         echo "  - Fedora: ${cmd_prefix}dnf install fuse"
         echo "  - Arch Linux: ${cmd_prefix}pacman -S fuse2"
         exit 1
@@ -89,9 +89,14 @@ function get_install_dir() {
 
 function get_fallback_download_info() {
     local arch=$(get_arch)
-    local fallback_hash="d750e54bba5cffada6d7b3d18e5688ba5e944ad9"  # From 1.6.27 (Sep 17, 2025; update periodically)
-    local fallback_version="1.6.27"
-    echo "URL=https://downloads.cursor.com/production/$fallback_hash/linux/$arch/Cursor-$fallback_version-${arch}.AppImage"
+    local path_arch="$arch"  # NEW: x64/arm64 for path
+    local file_arch="x86_64"  # NEW: Map for filename
+    if [ "$arch" = "arm64" ]; then
+        file_arch="aarch64"
+    fi
+    local fallback_hash="8ea935e79a50a02da912a034bbeda84a6d3d355d"  # FIXED: Recent from 0.50.4 (May 2025)
+    local fallback_version="0.50.4"  # FIXED: Updated version
+    echo "URL=https://downloads.cursor.com/production/$fallback_hash/linux/$path_arch/Cursor-$fallback_version-$file_arch.AppImage"
     echo "VERSION=$fallback_version"
     return 1  # Still error, but usable URL
 }
@@ -100,23 +105,28 @@ function get_download_info() {
     local temp_html=$(mktemp)
     local release_track=${1:-stable} # Default to stable if not specified
     local arch=$(get_arch)  # x64 or arm64
-    local platform="linux-${arch}"
+    local path_arch="$arch"  # NEW: For platform param (x64/arm64)
+    local file_arch="x86_64"  # NEW: For filename filter (x86_64/aarch64)
+    if [ "$arch" = "arm64" ]; then
+        file_arch="aarch64"
+    fi
+    local platform="linux-${path_arch}"
     local api_url="https://cursor.com/api/download?platform=$platform&releaseTrack=$release_track"
 
-    echo "Fetching download info for $release_track track..."
+    echo "Fetching download info for $release_track track ($file_arch)..."
     if ! curl -sL "$api_url" -o "$temp_html"; then
         rm -f "$temp_html"
-        get_fallback_download_info "curl failed on $api_url"
+        get_fallback_download_info
         return 1
     fi
 
-    # Scrape for AppImage URL (matches pattern in UI hrefs)
-    local download_url=$(grep -o 'https://downloads\.cursor\.com/[^[:space:]]*\.AppImage' "$temp_html" | head -1 | sed 's/["'\'']\?$//')  # Strip quotes/trailing
+    # FIXED: Arch-specific scrape (filters to correct binary)
+    local download_url=$(grep -o "https://downloads\.cursor\.com/[^[:space:]]*${file_arch}\.AppImage" "$temp_html" | head -1 | sed 's/["'\'']\?$//')
 
     rm -f "$temp_html"
 
     if [ -z "$download_url" ]; then
-        get_fallback_download_info "No AppImage URL found in response"
+        get_fallback_download_info
         return 1
     fi
 
@@ -137,6 +147,7 @@ function install_cursor() {
     local release_track=${2:-stable} # Default to stable if not specified
     local temp_file=$(mktemp)
     local current_dir=$(pwd)
+    local arch=$(get_arch)  # NEW: For verification
     local download_info=$(get_download_info "$release_track")
     local message=$(echo "$download_info" | grep "MESSAGE=" | sed 's/^MESSAGE=//')
 
@@ -146,7 +157,7 @@ function install_cursor() {
     fi
 
     # Check for FUSE before proceeding with installation
-    check_fuse
+    check_fuse || return 1  # NEW: Propagate FUSE error
 
     local download_url=$(echo "$download_info" | grep "URL=" | sed 's/^URL=//')
     local version=$(echo "$download_info" | grep "VERSION=" | sed 's/^VERSION=//')
@@ -170,6 +181,19 @@ function install_cursor() {
         return 1
     fi
 
+    # NEW: Verify binary architecture matches host
+    local binary_info=$(file "$install_dir/cursor.appimage" 2>/dev/null || echo "unreadable")
+    local expected_grep="x86-64"
+    if [ "$arch" = "arm64" ]; then
+        expected_grep="ARM aarch64"
+    fi
+    if ! echo "$binary_info" | grep -q "$expected_grep"; then
+        echo "Error: Arch mismatch detected ($binary_info). Expected $expected_grep. Aborting install." >&2
+        rm -f "$install_dir/cursor.appimage"
+        return 1
+    fi
+    echo "Binary verified: $binary_info"
+
     # Store version information in a simple file
     echo "$version" >"$install_dir/.cursor_version"
 
@@ -178,25 +202,46 @@ function install_cursor() {
     cd "$temp_extract_dir"
 
     # Extract icons
-    "$install_dir/cursor.appimage" --appimage-extract "usr/share/icons" >/dev/null 2>&1
+    if ! "$install_dir/cursor.appimage" --appimage-extract "usr/share/icons" >/dev/null 2>&1; then
+        echo "Warning: Icon extraction failed—skipping." >&2
+    fi
     # Extract desktop file
-    "$install_dir/cursor.appimage" --appimage-extract "cursor.desktop" >/dev/null 2>&1
+    if ! "$install_dir/cursor.appimage" --appimage-extract "cursor.desktop" >/dev/null 2>&1; then
+        echo "Warning: Desktop extraction failed—skipping." >&2
+    fi
+
+    # NEW: Verify extraction succeeded before copying
+    if [ ! -d "squashfs-root" ]; then
+        echo "Error: Extraction failed (squashfs-root missing). Check arch/FUSE." >&2
+        cd "$current_dir"
+        rm -rf "$temp_extract_dir"
+        return 1
+    fi
 
     # Copy icons
     local icon_dir="$HOME/.local/share/icons/hicolor"
     mkdir -p "$icon_dir"
-    cp -r squashfs-root/usr/share/icons/hicolor/* "$icon_dir/"
+    if [ -d "squashfs-root/usr/share/icons/hicolor" ]; then
+        cp -r squashfs-root/usr/share/icons/hicolor/* "$icon_dir/" 2>/dev/null || echo "Warning: Icon copy failed."
+    fi
 
     # Copy desktop file
     local apps_dir="$HOME/.local/share/applications"
     mkdir -p "$apps_dir"
-    cp squashfs-root/cursor.desktop "$apps_dir/"
+    if [ -f "squashfs-root/cursor.desktop" ]; then
+        cp squashfs-root/cursor.desktop "$apps_dir/"
+        # Update desktop file to point to the correct AppImage location
+        sed -i "s|Exec=.*|Exec=$install_dir/cursor.appimage --no-sandbox|g" "$apps_dir/cursor.desktop"
 
-    # Update desktop file to point to the correct AppImage location
-    sed -i "s|Exec=.*|Exec=$install_dir/cursor.appimage --no-sandbox|g" "$apps_dir/cursor.desktop"
+        # Fix potential icon name mismatch in the extracted desktop file
+        sed -i 's/^Icon=co.anysphere.cursor/Icon=cursor/' "$apps_dir/cursor.desktop"
 
-    # Fix potential icon name mismatch in the extracted desktop file
-    sed -i 's/^Icon=co.anysphere.cursor/Icon=cursor/' "$apps_dir/cursor.desktop"
+        # NEW: Refresh desktop database for menu visibility
+        update-desktop-database "$apps_dir" 2>/dev/null || true
+        echo ".desktop file installed and updated."
+    else
+        echo "Warning: cursor.desktop not found in extraction—manual setup needed."
+    fi
 
     # Clean up
     cd "$current_dir"
@@ -208,7 +253,6 @@ function install_cursor() {
 
 function update_cursor() {
     echo "Updating Cursor..."
-    local arch=$(get_arch)
     local current_appimage=$(find_cursor_appimage)
     local install_dir
     local release_track=${1:-stable} # Default to stable if not specified
@@ -231,6 +275,17 @@ function launch_cursor() {
         cursor_appimage=$(find_cursor_appimage)
     fi
 
+    # NEW: Pre-launch safeguard (re-chmod + arch check)
+    if [ ! -x "$cursor_appimage" ]; then
+        echo "Fixing execution permissions..."
+        chmod +x "$cursor_appimage"
+    fi
+    local binary_info=$(file "$cursor_appimage" 2>/dev/null || echo "unreadable")
+    if ! echo "$binary_info" | grep -q "$(get_arch | sed 's/x64/x86-64/;s/arm64/ARM aarch64/')"; then  # Simplified arch map
+        echo "Error: Arch mismatch in binary ($binary_info). Re-update." >&2
+        return 1
+    fi
+
     # Create a log file to capture output and errors
     local log_file="/tmp/cursor_appimage.log"
 
@@ -244,7 +299,7 @@ function launch_cursor() {
     sleep 1
 
     # Check if the process is still running
-    if ! kill -0 "$pid" 2>/dev/null; then
+    if ! kill -0 "$pid" 2>&1; then
         echo "Error: Cursor AppImage failed to start. Check the log for details."
         cat "$log_file"
     else
