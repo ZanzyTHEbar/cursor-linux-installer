@@ -237,7 +237,14 @@ function install_cursor() {
         sed -i 's/^Icon=co.anysphere.cursor/Icon=cursor/' "$apps_dir/cursor.desktop"
 
         # Fix MimeType to support xdg-open and backlinks
-        sed -i 's|^MimeType=.*|MimeType=x-scheme-handler/cursor;|' "$apps_dir/cursor.desktop"
+        # If MimeType line exists, append x-scheme-handler/cursor; if not already present; else add the line
+        if grep -q '^MimeType=' "$apps_dir/cursor.desktop"; then
+            sed -i '/^MimeType=/{
+                /x-scheme-handler\/cursor;/!s/$/x-scheme-handler\/cursor;/
+            }' "$apps_dir/cursor.desktop"
+        else
+            echo 'MimeType=x-scheme-handler/cursor;' >> "$apps_dir/cursor.desktop"
+        fi
 
         # NEW: Refresh desktop database for menu visibility
         update-desktop-database "$apps_dir" 2>/dev/null || true
