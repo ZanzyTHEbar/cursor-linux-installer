@@ -231,10 +231,13 @@ function install_cursor() {
     if [ -f "squashfs-root/cursor.desktop" ]; then
         cp squashfs-root/cursor.desktop "$apps_dir/"
         # Update desktop file to point to the correct AppImage location
-        sed -i "s|Exec=.*|Exec=$install_dir/cursor.appimage --no-sandbox|g" "$apps_dir/cursor.desktop"
+        sed -i "s|Exec=.*|Exec=$install_dir/cursor.appimage --no-sandbox --open-url %U|g" "$apps_dir/cursor.desktop"
 
         # Fix potential icon name mismatch in the extracted desktop file
         sed -i 's/^Icon=co.anysphere.cursor/Icon=cursor/' "$apps_dir/cursor.desktop"
+
+        # Fix MimeType to support xdg-open and backlinks
+        sed -i 's|^MimeType=.*|MimeType=x-scheme-handler/cursor;|' "$apps_dir/cursor.desktop"
 
         # NEW: Refresh desktop database for menu visibility
         update-desktop-database "$apps_dir" 2>/dev/null || true
