@@ -16,20 +16,20 @@ You can install the Cursor Linux Installer using either curl or wget. Choose the
 
 ```bash
 # Install stable version (default)
-curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/main/install.sh | bash
 
 # Install latest version
-curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- latest
+curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/main/install.sh | bash -s -- latest
 ```
 
 ### Using wget
 
 ```bash
 # Install stable version (default)
-wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/main/install.sh | bash
 
 # Install latest version
-wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- latest
+wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/main/install.sh | bash -s -- latest
 ```
 
 The installation script will:
@@ -43,13 +43,13 @@ The installation script will:
 To uninstall the Cursor Linux Installer, you can run the uninstall script:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/uninstall.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/main/uninstall.sh)"
 ```
 
 or
 
 ```bash
-bash -c "$(wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/uninstall.sh)"
+bash -c "$(wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/main/uninstall.sh)"
 
 ```
 
