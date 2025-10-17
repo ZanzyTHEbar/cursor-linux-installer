@@ -2,6 +2,31 @@
 
 set -e
 
+# Installation mode: 'appimage' (default) or 'extracted'
+# Can be set via CURSOR_INSTALL_MODE environment variable or --extract flag
+INSTALL_MODE="${CURSOR_INSTALL_MODE:-appimage}"
+
+function is_extracted_install() {
+    local install_dir="$1"
+    [ -f "$install_dir/.cursor_extracted" ] && [ -d "$install_dir/cursor" ]
+}
+
+function get_extracted_root() {
+    local search_dirs=("$HOME/.local/share/cursor" "$HOME/.cursor")
+    for dir in "${search_dirs[@]}"; do
+        if is_extracted_install "$dir"; then
+            echo "$dir"
+            return 0
+        fi
+    done
+    return 1
+}
+
+function get_extraction_dir() {
+    # Prefer ~/.local/share/cursor for extracted installations
+    echo "$HOME/.local/share/cursor"
+}
+
 function check_fuse() {
     # Set command prefix based on whether we're root
     local cmd_prefix=""
@@ -72,6 +97,28 @@ function find_cursor_appimage() {
             return 0
         fi
     done
+    return 1
+}
+
+function find_cursor_executable() {
+    # First check for extracted installation
+    local extracted_root
+    if extracted_root=$(get_extracted_root); then
+        local exe="$extracted_root/cursor/cursor"
+        if [ -x "$exe" ]; then
+            echo "$exe"
+            return 0
+        fi
+    fi
+    
+    # Fall back to AppImage
+    local appimage
+    appimage=$(find_cursor_appimage)
+    if [ -n "$appimage" ]; then
+        echo "$appimage"
+        return 0
+    fi
+    
     return 1
 }
 
@@ -147,9 +194,187 @@ function get_download_info() {
     return 0
 }
 
+function create_launcher_script() {
+    local extracted_root="$1"
+    local launcher_script="$HOME/.local/bin/cursor"
+    
+    mkdir -p "$HOME/.local/bin"
+    
+    cat > "$launcher_script" << 'EOF'
+#!/usr/bin/env bash
+# Cursor launcher script for extracted installation
+
+CURSOR_ROOT="__CURSOR_ROOT__"
+CURSOR_EXECUTABLE="$CURSOR_ROOT/cursor/cursor"
+
+if [ ! -x "$CURSOR_EXECUTABLE" ]; then
+    echo "Error: Cursor executable not found at $CURSOR_EXECUTABLE" >&2
+    exit 1
+fi
+
+# Set up environment for extracted AppImage
+export APPDIR="$CURSOR_ROOT/cursor"
+export PATH="$APPDIR/usr/bin:$PATH"
+export LD_LIBRARY_PATH="$APPDIR/usr/lib:$LD_LIBRARY_PATH"
+
+# Run Cursor with all arguments
+cd "$APPDIR" || exit 1
+exec "$CURSOR_EXECUTABLE" "$@"
+EOF
+
+    # Replace placeholder with actual path
+    sed -i "s|__CURSOR_ROOT__|$extracted_root|g" "$launcher_script"
+    chmod +x "$launcher_script"
+    
+    echo "Launcher script created at $launcher_script"
+}
+
+function install_cursor_extracted() {
+    local install_dir="$1"
+    local release_track=${2:-stable}
+    local temp_file
+    temp_file=$(mktemp)
+    local arch
+    arch=$(get_arch)
+    local download_info
+    download_info=$(get_download_info "$release_track")
+    local message
+    message=$(echo "$download_info" | grep "MESSAGE=" | sed 's/^MESSAGE=//')
+
+    if [ -n "$message" ]; then
+        echo "$message"
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    local download_url
+    download_url=$(echo "$download_info" | grep "URL=" | sed 's/^URL=//')
+    local version
+    version=$(echo "$download_info" | grep "VERSION=" | sed 's/^VERSION=//')
+
+    echo "Downloading $version Cursor AppImage for extraction..."
+    if ! curl -L "$download_url" -o "$temp_file"; then
+        echo "Failed to download Cursor AppImage" >&2
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    chmod +x "$temp_file"
+
+    # Verify binary architecture
+    local binary_info
+    binary_info=$(file "$temp_file" 2>/dev/null || echo "unreadable")
+    local expected_grep="x86-64"
+    if [ "$arch" = "arm64" ]; then
+        expected_grep="ARM aarch64"
+    fi
+    if ! echo "$binary_info" | grep -q "$expected_grep"; then
+        echo "Error: Arch mismatch detected ($binary_info). Expected $expected_grep." >&2
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    echo "Extracting Cursor AppImage (this may take a moment)..."
+    local temp_extract_dir
+    temp_extract_dir=$(mktemp -d)
+    local current_dir
+    current_dir=$(pwd)
+    cd "$temp_extract_dir"
+
+    # Extract the full AppImage
+    if ! "$temp_file" --appimage-extract >/dev/null 2>&1; then
+        echo "Error: Failed to extract AppImage. Install 'file' and 'squashfs-tools' if needed." >&2
+        cd "$current_dir"
+        rm -rf "$temp_extract_dir" "$temp_file"
+        return 1
+    fi
+
+    if [ ! -d "squashfs-root" ]; then
+        echo "Error: Extraction failed (squashfs-root missing)." >&2
+        cd "$current_dir"
+        rm -rf "$temp_extract_dir" "$temp_file"
+        return 1
+    fi
+
+    # Create installation directory and move extracted content
+    mkdir -p "$install_dir"
+    rm -rf "$install_dir/cursor"
+    mv squashfs-root "$install_dir/cursor"
+
+    # Mark as extracted installation
+    echo "$version" > "$install_dir/.cursor_extracted"
+    echo "$version" > "$install_dir/.cursor_version"
+
+    # Find the main Cursor executable
+    local main_exe=""
+    for possible_exe in "$install_dir/cursor/cursor" "$install_dir/cursor/usr/bin/cursor" "$install_dir/cursor/AppRun"; do
+        if [ -x "$possible_exe" ]; then
+            main_exe="$possible_exe"
+            break
+        fi
+    done
+
+    if [ -z "$main_exe" ]; then
+        echo "Warning: Could not find Cursor executable in extracted files." >&2
+    else
+        echo "Cursor executable found at: $main_exe"
+    fi
+
+    # Create launcher script
+    create_launcher_script "$install_dir"
+
+    # Install icons
+    local icon_dir="$HOME/.local/share/icons/hicolor"
+    mkdir -p "$icon_dir"
+    if [ -d "$install_dir/cursor/usr/share/icons/hicolor" ]; then
+        cp -r "$install_dir/cursor/usr/share/icons/hicolor/"* "$icon_dir/" 2>/dev/null || echo "Warning: Icon copy failed."
+    fi
+
+    # Install desktop file
+    local apps_dir="$HOME/.local/share/applications"
+    mkdir -p "$apps_dir"
+    if [ -f "$install_dir/cursor/cursor.desktop" ]; then
+        cp "$install_dir/cursor/cursor.desktop" "$apps_dir/"
+        sed -i "s|^Exec=.*|Exec=\"$HOME/.local/bin/cursor\" --no-sandbox --open-url \"%U\"|" "$apps_dir/cursor.desktop"
+        sed -i 's/^Icon=co.anysphere.cursor/Icon=cursor/' "$apps_dir/cursor.desktop"
+        
+        # Fix MimeType
+        if grep -q '^MimeType=' "$apps_dir/cursor.desktop"; then
+            sed -i '/^MimeType=/{
+                /x-scheme-handler\/cursor;/!s/$/x-scheme-handler\/cursor;/
+            }' "$apps_dir/cursor.desktop"
+        else
+            echo 'MimeType=x-scheme-handler/cursor;' >> "$apps_dir/cursor.desktop"
+        fi
+
+        update-desktop-database "$apps_dir" 2>/dev/null || true
+        echo ".desktop file installed and updated."
+    fi
+
+    # Cleanup
+    cd "$current_dir"
+    rm -rf "$temp_extract_dir" "$temp_file"
+
+    echo ""
+    echo "✓ Cursor $version has been extracted and installed to $install_dir/cursor"
+    echo "✓ No FUSE required - running as native application"
+    echo "✓ Launcher script created at $HOME/.local/bin/cursor"
+    return 0
+}
+
 function install_cursor() {
     local install_dir="$1"
     local release_track=${2:-stable} # Default to stable if not specified
+    
+    # Check if we should do extracted installation
+    if [ "$INSTALL_MODE" = "extracted" ]; then
+        local extract_dir
+        extract_dir=$(get_extraction_dir)
+        install_cursor_extracted "$extract_dir" "$release_track"
+        return $?
+    fi
+    
+    # Otherwise, proceed with AppImage installation
     local temp_file
     temp_file=$(mktemp)
     local current_dir
@@ -166,7 +391,7 @@ function install_cursor() {
         return 1
     fi
 
-    # Check for FUSE before proceeding with installation
+    # Check for FUSE before proceeding with AppImage installation
     check_fuse || return 1  # NEW: Propagate FUSE error
 
     local download_url
@@ -292,16 +517,57 @@ function update_cursor() {
 }
 
 function launch_cursor() {
+    # Check for extracted installation first
+    local extracted_root
+    if extracted_root=$(get_extracted_root); then
+        local cursor_exe="$extracted_root/cursor/cursor"
+        if [ ! -x "$cursor_exe" ]; then
+            # Try alternate locations
+            for alt in "$extracted_root/cursor/usr/bin/cursor" "$extracted_root/cursor/AppRun"; do
+                if [ -x "$alt" ]; then
+                    cursor_exe="$alt"
+                    break
+                fi
+            done
+        fi
+        
+        if [ -x "$cursor_exe" ]; then
+            echo "Launching extracted Cursor installation..."
+            local log_file="/tmp/cursor_extracted.log"
+            
+            # Set up environment
+            export APPDIR="$extracted_root/cursor"
+            export PATH="$APPDIR/usr/bin:$PATH"
+            export LD_LIBRARY_PATH="$APPDIR/usr/lib:${LD_LIBRARY_PATH:-}"
+            
+            cd "$APPDIR" || return 1
+            nohup "$cursor_exe" --no-sandbox "$@" >"$log_file" 2>&1 &
+            
+            local pid=$!
+            sleep 1
+            
+            if ! kill -0 "$pid" 2>/dev/null; then
+                echo "Error: Cursor failed to start. Check the log for details."
+                cat "$log_file"
+                return 1
+            else
+                echo "Cursor is running (extracted mode)."
+                return 0
+            fi
+        fi
+    fi
+    
+    # Fall back to AppImage mode
     local cursor_appimage
     cursor_appimage=$(find_cursor_appimage)
 
     if [ -z "$cursor_appimage" ]; then
-        echo "Error: Cursor AppImage not found. Running update to install it."
+        echo "Error: Cursor not found. Running update to install it."
         update_cursor
         cursor_appimage=$(find_cursor_appimage)
     fi
 
-    # NEW: Pre-launch safeguard (re-chmod + arch check)
+    # Pre-launch safeguard (re-chmod + arch check)
     if [ ! -x "$cursor_appimage" ]; then
         echo "Fixing execution permissions..."
         chmod +x "$cursor_appimage"
@@ -335,6 +601,19 @@ function launch_cursor() {
 }
 
 function get_version() {
+    # Check extracted installation first
+    local extracted_root
+    if extracted_root=$(get_extracted_root); then
+        local version_file="$extracted_root/.cursor_version"
+        if [ -f "$version_file" ]; then
+            local version
+            version=$(cat "$version_file")
+            echo "Cursor version: $version (extracted installation)"
+            return 0
+        fi
+    fi
+    
+    # Check AppImage installation
     local cursor_appimage
     cursor_appimage=$(find_cursor_appimage)
     if [ -z "$cursor_appimage" ]; then
@@ -350,7 +629,7 @@ function get_version() {
         local version
         version=$(cat "$version_file")
         if [ -n "$version" ]; then
-            echo "Cursor version: $version"
+            echo "Cursor version: $version (AppImage)"
             return 0
         else
             echo "Version information is empty"
@@ -363,18 +642,56 @@ function get_version() {
 }
 
 # Parse command-line arguments
-if [ "$1" == "--version" ] || [ "$1" == "-v" ]; then
-    get_version
-    exit $?
-elif [ "$1" == "--update" ]; then
-    update_cursor "$2"
-elif [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo "Usage: cursor [--update <stable|latest> | --version]"
-    echo "  --update: Update Cursor to the specified version"
-    echo "  --version, -v: Show the installed version of Cursor"
-    exit 0
-else
-    launch_cursor "$@"
-fi
+case "$1" in
+    --version|-v)
+        get_version
+        exit $?
+        ;;
+    --update)
+        update_cursor "$2"
+        exit $?
+        ;;
+    --extract|--no-fuse)
+        # Enable extracted installation mode
+        INSTALL_MODE="extracted"
+        shift
+        if [ "$1" == "--update" ]; then
+            update_cursor "$2"
+        else
+            # Install in extracted mode
+            extract_dir=$(get_extraction_dir)
+            install_cursor_extracted "$extract_dir" "${1:-stable}"
+        fi
+        exit $?
+        ;;
+    --help|-h)
+        cat << 'HELP'
+Usage: cursor [OPTIONS] [ARGUMENTS]
 
-exit $?
+Options:
+  --version, -v           Show the installed version of Cursor
+  --update [stable|latest] Update Cursor to the specified release track
+  --extract, --no-fuse    Install/update Cursor in extracted mode (no FUSE required)
+  --help, -h              Show this help message
+
+Installation Modes:
+  AppImage (default)      Uses FUSE to run Cursor as an AppImage
+  Extracted (--extract)   Fully extracts and installs Cursor without FUSE dependency
+                          Useful for systems without FUSE support or restricted environments
+
+Examples:
+  cursor                        Launch Cursor
+  cursor --update stable        Update to stable release
+  cursor --extract --update     Install/update in extracted mode (no FUSE)
+  cursor --version              Show installed version
+
+Environment Variables:
+  CURSOR_INSTALL_MODE     Set to 'extracted' to use extracted mode by default
+HELP
+        exit 0
+        ;;
+    *)
+        launch_cursor "$@"
+        exit $?
+        ;;
+esac
