@@ -2,8 +2,6 @@
 
 set -e
 
-ROOT=$(dirname "$(dirname "$(readlink -f $0)")")
-
 function check_fuse() {
     # Set command prefix based on whether we're root
     local cmd_prefix=""
@@ -52,7 +50,8 @@ function check_fuse() {
 }
 
 function get_arch() {
-    local arch=$(uname -m)
+    local arch
+    arch=$(uname -m)
     if [ "$arch" == "x86_64" ]; then
         echo "x64"
     elif [ "$arch" == "aarch64" ]; then
@@ -66,7 +65,8 @@ function get_arch() {
 function find_cursor_appimage() {
     local search_dirs=("$HOME/AppImages" "$HOME/Applications" "$HOME/.local/bin")
     for dir in "${search_dirs[@]}"; do
-        local appimage=$(find "$dir" -name "cursor.appimage" -print -quit 2>/dev/null)
+        local appimage
+        appimage=$(find "$dir" -name "cursor.appimage" -print -quit 2>/dev/null)
         if [ -n "$appimage" ]; then
             echo "$appimage"
             return 0
@@ -88,7 +88,8 @@ function get_install_dir() {
 }
 
 function get_fallback_download_info() {
-    local arch=$(get_arch)
+    local arch
+    arch=$(get_arch)
     local path_arch="$arch"  # NEW: x64/arm64 for path
     local file_arch="x86_64"  # NEW: Map for filename
     if [ "$arch" = "arm64" ]; then
@@ -102,9 +103,11 @@ function get_fallback_download_info() {
 }
 
 function get_download_info() {
-    local temp_html=$(mktemp)
+    local temp_html
+    temp_html=$(mktemp)
     local release_track=${1:-stable} # Default to stable if not specified
-    local arch=$(get_arch)  # x64 or arm64
+    local arch
+    arch=$(get_arch)  # x64 or arm64
     local path_arch="$arch"  # NEW: For platform param (x64/arm64)
     local file_arch="x86_64"  # NEW: For filename filter (x86_64/aarch64)
     if [ "$arch" = "arm64" ]; then
@@ -121,7 +124,8 @@ function get_download_info() {
     fi
 
     # FIXED: Arch-specific scrape (filters to correct binary)
-    local download_url=$(grep -o "https://downloads\.cursor\.com/[^[:space:]]*${file_arch}\.AppImage" "$temp_html" | head -1 | sed 's/["'\'']\?$//')
+    local download_url
+    download_url=$(grep -o "https://downloads\.cursor\.com/[^[:space:]]*${file_arch}\.AppImage" "$temp_html" | head -1 | sed 's/["'\'']\?$//')
 
     rm -f "$temp_html"
 
@@ -131,7 +135,8 @@ function get_download_info() {
     fi
 
     # Extract version from filename (e.g., Cursor-1.6.35-x86_64.AppImage → 1.6.35)
-    local version=$(basename "$download_url" | sed -E 's/.*Cursor-([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+    local version
+    version=$(basename "$download_url" | sed -E 's/.*Cursor-([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 
     if [ -z "$version" ]; then
         version="unknown"  # Rare fallback
@@ -145,11 +150,16 @@ function get_download_info() {
 function install_cursor() {
     local install_dir="$1"
     local release_track=${2:-stable} # Default to stable if not specified
-    local temp_file=$(mktemp)
-    local current_dir=$(pwd)
-    local arch=$(get_arch)  # NEW: For verification
-    local download_info=$(get_download_info "$release_track")
-    local message=$(echo "$download_info" | grep "MESSAGE=" | sed 's/^MESSAGE=//')
+    local temp_file
+    temp_file=$(mktemp)
+    local current_dir
+    current_dir=$(pwd)
+    local arch
+    arch=$(get_arch)  # NEW: For verification
+    local download_info
+    download_info=$(get_download_info "$release_track")
+    local message
+    message=$(echo "$download_info" | grep "MESSAGE=" | sed 's/^MESSAGE=//')
 
     if [ -n "$message" ]; then
         echo "$message"
@@ -159,8 +169,10 @@ function install_cursor() {
     # Check for FUSE before proceeding with installation
     check_fuse || return 1  # NEW: Propagate FUSE error
 
-    local download_url=$(echo "$download_info" | grep "URL=" | sed 's/^URL=//')
-    local version=$(echo "$download_info" | grep "VERSION=" | sed 's/^VERSION=//')
+    local download_url
+    download_url=$(echo "$download_info" | grep "URL=" | sed 's/^URL=//')
+    local version
+    version=$(echo "$download_info" | grep "VERSION=" | sed 's/^VERSION=//')
 
     echo "Downloading $version Cursor AppImage..."
     if ! curl -L "$download_url" -o "$temp_file"; then
@@ -182,7 +194,8 @@ function install_cursor() {
     fi
 
     # NEW: Verify binary architecture matches host
-    local binary_info=$(file "$install_dir/cursor.appimage" 2>/dev/null || echo "unreadable")
+    local binary_info
+    binary_info=$(file "$install_dir/cursor.appimage" 2>/dev/null || echo "unreadable")
     local expected_grep="x86-64"
     if [ "$arch" = "arm64" ]; then
         expected_grep="ARM aarch64"
@@ -198,7 +211,8 @@ function install_cursor() {
     echo "$version" >"$install_dir/.cursor_version"
 
     echo "Extracting icons and desktop file..."
-    local temp_extract_dir=$(mktemp -d)
+    local temp_extract_dir
+    temp_extract_dir=$(mktemp -d)
     cd "$temp_extract_dir"
 
     # Extract icons
@@ -263,7 +277,8 @@ function install_cursor() {
 
 function update_cursor() {
     echo "Updating Cursor..."
-    local current_appimage=$(find_cursor_appimage)
+    local current_appimage
+    current_appimage=$(find_cursor_appimage)
     local install_dir
     local release_track=${1:-stable} # Default to stable if not specified
 
@@ -277,7 +292,8 @@ function update_cursor() {
 }
 
 function launch_cursor() {
-    local cursor_appimage=$(find_cursor_appimage)
+    local cursor_appimage
+    cursor_appimage=$(find_cursor_appimage)
 
     if [ -z "$cursor_appimage" ]; then
         echo "Error: Cursor AppImage not found. Running update to install it."
@@ -290,7 +306,8 @@ function launch_cursor() {
         echo "Fixing execution permissions..."
         chmod +x "$cursor_appimage"
     fi
-    local binary_info=$(file "$cursor_appimage" 2>/dev/null || echo "unreadable")
+    local binary_info
+    binary_info=$(file "$cursor_appimage" 2>/dev/null || echo "unreadable")
     if ! echo "$binary_info" | grep -q "$(get_arch | sed 's/x64/x86-64/;s/arm64/ARM aarch64/')"; then  # Simplified arch map
         echo "Error: Arch mismatch in binary ($binary_info). Re-update." >&2
         return 1
@@ -318,17 +335,20 @@ function launch_cursor() {
 }
 
 function get_version() {
-    local cursor_appimage=$(find_cursor_appimage)
+    local cursor_appimage
+    cursor_appimage=$(find_cursor_appimage)
     if [ -z "$cursor_appimage" ]; then
         echo "Cursor is not installed"
         return 1
     fi
 
-    local install_dir=$(dirname "$cursor_appimage")
+    local install_dir
+    install_dir=$(dirname "$cursor_appimage")
     local version_file="$install_dir/.cursor_version"
 
     if [ -f "$version_file" ]; then
-        local version=$(cat "$version_file")
+        local version
+        version=$(cat "$version_file")
         if [ -n "$version" ]; then
             echo "Cursor version: $version"
             return 0

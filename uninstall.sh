@@ -8,7 +8,8 @@ echo "Uninstalling Cursor..."
 function find_cursor_appimage() {
     local search_dirs=("$HOME/AppImages" "$HOME/Applications" "$HOME/.local/bin")
     for dir in "${search_dirs[@]}"; do
-        local appimage=$(find "$dir" -name "cursor.appimage" -print -quit 2>/dev/null)
+        local appimage
+        appimage=$(find "$dir" -name "cursor.appimage" -print -quit 2>/dev/null)
         if [ -n "$appimage" ]; then
             echo "$appimage"
             return 0
@@ -41,7 +42,7 @@ rm -f "$HOME/.local/share/applications/cursor.desktop"
 echo "Cursor has been uninstalled."
 
 # Optionally, ask the user if they want to remove configuration files
-read -p "Do you want to remove Cursor configuration files? (y/N) " remove_config
+read -r -p "Do you want to remove Cursor configuration files? (y/N) " remove_config
 if [[ $remove_config =~ ^[Yy]$ ]]; then
     echo "Removing Cursor configuration files..."
     rm -rf "$HOME/.config/Cursor"
