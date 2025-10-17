@@ -44,6 +44,11 @@ The installation script will:
 2. Make the script executable
 3. Download and install the latest version of Cursor
 
+**Note:** If you're installing via the piped bash method and don't have FUSE2 installed, the script will warn you but continue. You'll need to either:
+
+- Install FUSE2 manually: `sudo apt-get install libfuse2` (Debian/Ubuntu), `sudo dnf install fuse` (Fedora), or `sudo pacman -S fuse2` (Arch)
+- Use extracted mode: `curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash -s -- stable --extract`
+
 ## Uninstalling
 
 To uninstall the Cursor Linux Installer, you can run the uninstall script:

@@ -28,50 +28,85 @@ function get_extraction_dir() {
 }
 
 function check_fuse() {
+    # First, check if FUSE is already available
+    if fusermount -V >/dev/null 2>&1; then
+        echo "FUSE2 is already available."
+        return 0
+    fi
+
+    # Check if we're in an interactive terminal
+    local is_interactive=false
+    if [ -t 0 ] && [ -t 1 ]; then
+        is_interactive=true
+    fi
+
     # Set command prefix based on whether we're root
     local cmd_prefix=""
     if [ "$EUID" -ne 0 ]; then
         cmd_prefix="sudo"
     fi
 
-    # FIXED: Check and install FUSE2 using the appropriate package manager
+    # Try to install FUSE2 using the appropriate package manager
     if command -v apt-get &>/dev/null; then
-        if ! dpkg -l | grep -q "^ii.*libfuse2 "; then  # FIXED: libfuse2, not fuse
-            echo "Installing libfuse2..."
-            $cmd_prefix apt-get update
-            $cmd_prefix apt-get install -y libfuse2  # FIXED: libfuse2 for AppImage compat
+        if ! dpkg -l | grep -q "^ii.*libfuse2 "; then
+            if [ "$is_interactive" = true ]; then
+                echo "Installing libfuse2..."
+                $cmd_prefix apt-get update && $cmd_prefix apt-get install -y libfuse2
+            else
+                echo "Warning: libfuse2 is not installed. AppImage requires FUSE2."
+                echo "Install it with: sudo apt-get install -y libfuse2"
+                echo "Continuing installation anyway..."
+                return 0
+            fi
         else
             echo "libfuse2 is already installed."
         fi
     elif command -v dnf &>/dev/null; then
         if ! rpm -q fuse >/dev/null 2>&1; then
-            echo "Installing fuse..."
-            $cmd_prefix dnf install -y fuse
+            if [ "$is_interactive" = true ]; then
+                echo "Installing fuse..."
+                $cmd_prefix dnf install -y fuse
+            else
+                echo "Warning: fuse is not installed. AppImage requires FUSE2."
+                echo "Install it with: sudo dnf install -y fuse"
+                echo "Continuing installation anyway..."
+                return 0
+            fi
         else
             echo "fuse is already installed."
         fi
     elif command -v pacman &>/dev/null; then
         if ! pacman -Qi fuse2 >/dev/null 2>&1; then
-            echo "Installing fuse2..."
-            $cmd_prefix pacman -S fuse2
+            if [ "$is_interactive" = true ]; then
+                echo "Installing fuse2..."
+                $cmd_prefix pacman -S --noconfirm fuse2
+            else
+                echo "Warning: fuse2 is not installed. AppImage requires FUSE2."
+                echo "Install it with: sudo pacman -S fuse2"
+                echo "Continuing installation anyway..."
+                return 0
+            fi
         else
             echo "fuse2 is already installed."
         fi
     else
-        echo "Unsupported package manager. Please install libfuse2 manually."
+        echo "Warning: Unsupported package manager. Please install libfuse2 manually."
         echo "You can install FUSE2 using your system's package manager:"
-        echo "  - Debian/Ubuntu: ${cmd_prefix}apt-get install libfuse2"  # FIXED: libfuse2
-        echo "  - Fedora: ${cmd_prefix}dnf install fuse"
-        echo "  - Arch Linux: ${cmd_prefix}pacman -S fuse2"
-        exit 1
+        echo "  - Debian/Ubuntu: sudo apt-get install libfuse2"
+        echo "  - Fedora: sudo dnf install fuse"
+        echo "  - Arch Linux: sudo pacman -S fuse2"
+        echo "Continuing installation anyway..."
+        return 0
     fi
 
     # Verify FUSE2 is functional
     if ! fusermount -V >/dev/null 2>&1; then
         echo "Warning: FUSE2 verification failed. AppImage may not run." >&2
-        return 1
+        echo "You may need to install FUSE2 manually or use --extract mode."
+        return 0  # Don't fail, just warn
     fi
     echo "FUSE2 is ready."
+    return 0
 }
 
 function get_arch() {
@@ -100,28 +135,6 @@ function find_cursor_appimage() {
     return 1
 }
 
-function find_cursor_executable() {
-    # First check for extracted installation
-    local extracted_root
-    if extracted_root=$(get_extracted_root); then
-        local exe="$extracted_root/cursor/cursor"
-        if [ -x "$exe" ]; then
-            echo "$exe"
-            return 0
-        fi
-    fi
-    
-    # Fall back to AppImage
-    local appimage
-    appimage=$(find_cursor_appimage)
-    if [ -n "$appimage" ]; then
-        echo "$appimage"
-        return 0
-    fi
-    
-    return 1
-}
-
 function get_install_dir() {
     local search_dirs=("$HOME/AppImages" "$HOME/Applications" "$HOME/.local/bin")
     for dir in "${search_dirs[@]}"; do
@@ -137,8 +150,8 @@ function get_install_dir() {
 function get_fallback_download_info() {
     local arch
     arch=$(get_arch)
-    local path_arch="$arch"  # NEW: x64/arm64 for path
-    local file_arch="x86_64"  # NEW: Map for filename
+    local path_arch="$arch"  # x64/arm64 for path
+    local file_arch="x86_64"  # Map for filename
     if [ "$arch" = "arm64" ]; then
         file_arch="aarch64"
     fi
@@ -155,8 +168,8 @@ function get_download_info() {
     local release_track=${1:-stable} # Default to stable if not specified
     local arch
     arch=$(get_arch)  # x64 or arm64
-    local path_arch="$arch"  # NEW: For platform param (x64/arm64)
-    local file_arch="x86_64"  # NEW: For filename filter (x86_64/aarch64)
+    local path_arch="$arch"  # For platform param (x64/arm64)
+    local file_arch="x86_64"  # For filename filter (x86_64/aarch64)
     if [ "$arch" = "arm64" ]; then
         file_arch="aarch64"
     fi
@@ -380,7 +393,7 @@ function install_cursor() {
     local current_dir
     current_dir=$(pwd)
     local arch
-    arch=$(get_arch)  # NEW: For verification
+    arch=$(get_arch)
     local download_info
     download_info=$(get_download_info "$release_track")
     local message
@@ -392,7 +405,8 @@ function install_cursor() {
     fi
 
     # Check for FUSE before proceeding with AppImage installation
-    check_fuse || return 1  # NEW: Propagate FUSE error
+    # Note: check_fuse only warns in non-interactive mode, doesn't fail
+    check_fuse
 
     local download_url
     download_url=$(echo "$download_info" | grep "URL=" | sed 's/^URL=//')
@@ -418,7 +432,7 @@ function install_cursor() {
         return 1
     fi
 
-    # NEW: Verify binary architecture matches host
+    # Verify binary architecture matches host
     local binary_info
     binary_info=$(file "$install_dir/cursor.appimage" 2>/dev/null || echo "unreadable")
     local expected_grep="x86-64"
@@ -449,7 +463,7 @@ function install_cursor() {
         echo "Warning: Desktop extraction failed—skipping." >&2
     fi
 
-    # NEW: Verify extraction succeeded before copying
+    # Verify extraction succeeded before copying
     if [ ! -d "squashfs-root" ]; then
         echo "Error: Extraction failed (squashfs-root missing). Check arch/FUSE." >&2
         cd "$current_dir"
@@ -485,7 +499,7 @@ function install_cursor() {
             echo 'MimeType=x-scheme-handler/cursor;' >> "$apps_dir/cursor.desktop"
         fi
 
-        # NEW: Refresh desktop database for menu visibility
+        # Refresh desktop database for menu visibility
         update-desktop-database "$apps_dir" 2>/dev/null || true
         echo ".desktop file installed and updated."
     else
