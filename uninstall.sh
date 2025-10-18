@@ -45,11 +45,19 @@ rm -f "$HOME/.local/bin/cursor"
 
 # Remove icons
 log_step "Removing Cursor icons..."
-find "$HOME/.local/share/icons/hicolor" -name "cursor.png" -delete
+# Remove any 'cursor' or legacy 'co.anysphere.cursor' icons under hicolor theme
+find "$HOME/.local/share/icons/hicolor" -type f \
+	\( -name 'cursor.*' -o -name 'co.anysphere.cursor.*' \) \
+	-path '*/apps/*' -delete 2>/dev/null || true
+# Clean up now-empty directories
+find "$HOME/.local/share/icons/hicolor" -type d -empty -delete 2>/dev/null || true
 
 # Remove desktop file
 log_step "Removing Cursor desktop file..."
 rm -f "$HOME/.local/share/applications/cursor.desktop"
+
+# Refresh desktop database for menu visibility cleanup
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 
 log_ok "Cursor has been uninstalled."
 
@@ -60,6 +68,11 @@ if [[ $remove_config =~ ^[Yy]$ ]]; then
     rm -rf "$HOME/.config/Cursor"
     log_ok "Configuration files removed."
 fi
+
+# Also remove extracted installations (FUSE-free mode) and related metadata
+log_step "Removing extracted installation directories..."
+rm -rf "$HOME/.local/share/cursor" "$HOME/.cursor"
+log_ok "Extracted installation directories removed (if present)."
 
 log_ok "Uninstallation complete."
 
