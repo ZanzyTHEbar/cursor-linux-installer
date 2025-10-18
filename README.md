@@ -108,13 +108,13 @@ Maintainer workflow:
 To uninstall the Cursor Linux Installer, you can run the uninstall script:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/uninstall.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/uninstall.sh)"
 ```
 
 or
 
 ```bash
-bash -c "$(wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/uninstall.sh)"
+bash -c "$(wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/uninstall.sh)"
 
 ```
 
