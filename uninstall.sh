@@ -21,10 +21,12 @@ function find_cursor_appimage() {
     local search_dirs=("$HOME/AppImages" "$HOME/Applications" "$HOME/.local/bin")
     for dir in "${search_dirs[@]}"; do
         local appimage
-        appimage=$(find "$dir" -name "cursor.appimage" -print -quit 2>/dev/null)
-        if [ -n "$appimage" ]; then
-            echo "$appimage"
-            return 0
+        if [ -d "$dir" ]; then
+            appimage=$(find "$dir" -name "cursor.appimage" -print -quit 2>/dev/null || true)
+            if [ -n "$appimage" ]; then
+                echo "$appimage"
+                return 0
+            fi
         fi
     done
     return 1
@@ -46,11 +48,13 @@ rm -f "$HOME/.local/bin/cursor"
 # Remove icons
 log_step "Removing Cursor icons..."
 # Remove any 'cursor' or legacy 'co.anysphere.cursor' icons under hicolor theme
-find "$HOME/.local/share/icons/hicolor" -type f \
-	\( -name 'cursor.*' -o -name 'co.anysphere.cursor.*' \) \
-	-path '*/apps/*' -delete 2>/dev/null || true
-# Clean up now-empty directories
-find "$HOME/.local/share/icons/hicolor" -type d -empty -delete 2>/dev/null || true
+if [ -d "$HOME/.local/share/icons/hicolor" ]; then
+    find "$HOME/.local/share/icons/hicolor" -type f \
+        \( -name 'cursor.*' -o -name 'co.anysphere.cursor.*' \) \
+        -path '*/apps/*' -delete 2>/dev/null || true
+    # Clean up now-empty directories
+    find "$HOME/.local/share/icons/hicolor" -type d -empty -delete 2>/dev/null || true
+fi
 
 # Remove desktop file
 log_step "Removing Cursor desktop file..."

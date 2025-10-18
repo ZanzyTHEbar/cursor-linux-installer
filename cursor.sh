@@ -172,8 +172,8 @@ function get_fallback_download_info() {
     fi
     local fallback_hash="8ea935e79a50a02da912a034bbeda84a6d3d355d"  # FIXED: Recent from 0.50.4 (May 2025)
     local fallback_version="0.50.4"  # FIXED: Updated version
-    echo "FALLBACK_URL=https://downloads.cursor.com/production/$fallback_hash/linux/$path_arch/Cursor-$fallback_version-$file_arch.AppImage"
-    echo "FALLBACK_VERSION=$fallback_version"
+    echo "URL=https://downloads.cursor.com/production/$fallback_hash/linux/$path_arch/Cursor-$fallback_version-$file_arch.AppImage"
+    echo "VERSION=$fallback_version"
     return 1  # Still error, but usable URL
 }
 
