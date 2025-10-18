@@ -10,35 +10,35 @@ This repository aims to solve that problem by providing a set of shell scripts t
 
 ## Installation
 
-You can install the Cursor Linux Installer using either curl or wget. Choose the method you prefer:
+There are two ways to install, depending on whether you want to run from the GitHub one-liner or from a locally cloned repository.
 
-### Using curl
-
-```bash
-# Install stable version (default, AppImage mode)
-curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash
-
-# Install latest version
-curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash -s -- latest
-
-# Install in extracted mode (no FUSE required)
-curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash -s -- stable --extract
-```
-
-### Using wget
+### Method 1: One‑liner (curl)
 
 ```bash
 # Install stable version (default, AppImage mode)
-wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash
 
 # Install latest version
-wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash -s -- latest
+curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- latest
 
 # Install in extracted mode (no FUSE required)
-wget -qO- https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash -s -- stable --extract
+curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- stable --extract
 ```
 
-The installation script will:
+### Method 1: One‑liner (wget)
+
+```bash
+# Install stable version (default, AppImage mode)
+wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash
+
+# Install latest version
+wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- latest
+
+# Install in extracted mode (no FUSE required)
+wget -qO- https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- stable --extract
+```
+
+The one‑liner script will:
 
 1. Download the `cursor.sh` script and save it as `cursor` in `~/.local/bin/`
 2. Make the script executable
@@ -47,7 +47,61 @@ The installation script will:
 **Note:** If you're installing via the piped bash method and don't have FUSE2 installed, the script will warn you but continue. You'll need to either:
 
 - Install FUSE2 manually: `sudo apt-get install libfuse2` (Debian/Ubuntu), `sudo dnf install fuse` (Fedora), or `sudo pacman -S fuse2` (Arch)
-- Use extracted mode: `curl -fsSL https://raw.githubusercontent.com/ZanzyTHEbar/cursor-linux-installer/personal/install.sh | bash -s -- stable --extract`
+- Use extracted mode: `curl -fsSL https://raw.githubusercontent.com/watzon/cursor-linux-installer/main/install.sh | bash -s -- stable --extract`
+
+### Method 2: Local clone
+
+```bash
+git clone https://github.com/watzon/cursor-linux-installer.git
+cd cursor-linux-installer
+
+# AppImage mode (default)
+./install.sh stable
+
+# Latest release
+./install.sh latest
+
+# Extracted, no-FUSE mode
+./install.sh latest --extract
+```
+
+When you run `./install.sh` from the repo, it uses the local `cursor.sh` instead of downloading from GitHub.
+
+### Maintainers: Switching between personal and canonical repos
+
+This fork uses a personal branch for development and the upstream repo for canonical links. The installer supports environment overrides so you can test personal builds without modifying repo defaults:
+
+```bash
+# (Optional) Personal testing without editing repo defaults
+export REPO_OWNER="ZanzyTHEbar"
+export REPO_BRANCH="personal"
+./install.sh latest
+```
+
+CI or release scripts can set these env vars to ensure links point to the canonical repo in artifacts and docs.
+
+#### Branch protection and automation
+
+This repository enforces that `main` always points to the canonical upstream (`watzon/cursor-linux-installer`).
+
+- A GitHub Action (`.github/workflows/enforce-canonical.yml`) runs on pushes and PRs to `main` and fails if:
+  - Any personal links like `ZanzyTHEbar/cursor-linux-installer/personal` are present in tracked files.
+  - `install.sh` defaults are not `REPO_OWNER=watzon` and `REPO_BRANCH=main`.
+
+Maintainer workflow:
+
+1. Develop on personal branch.
+2. Merge to `main` in your fork.
+3. Canonical defaults are used automatically (`watzon/main`). For personal testing, use the env overrides shown above.
+
+4. Enable local git hook to prevent pushing non-canonical links to main:
+
+   ```bash
+   git config core.hooksPath .githooks
+   chmod +x .githooks/pre-push
+   ```
+
+5. Open PR to upstream. CI will verify canonical links.
 
 ## Uninstalling
 
@@ -135,7 +189,7 @@ export CURSOR_INSTALL_MODE=extracted
 cursor --update stable
 ```
 
-**Note:** The extracted installation is stored in `~/.local/share/cursor/` and takes up more disk space (~500MB) compared to the AppImage.
+**Note:** The extracted installation is stored in `~/.local/share/cursor/`.
 
 ## Note
 
