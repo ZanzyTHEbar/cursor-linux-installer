@@ -47,7 +47,9 @@ rm -f "$HOME/.local/bin/cursor"
 
 # Remove icons
 log_step "Removing Cursor icons..."
-find "$HOME/.local/share/icons/hicolor" -name "cursor.png" -delete
+if [ -d "$HOME/.local/share/icons/hicolor" ]; then
+    find "$HOME/.local/share/icons/hicolor" -name "cursor.png" -delete
+fi
 
 # Remove desktop file
 log_step "Removing Cursor desktop file..."
