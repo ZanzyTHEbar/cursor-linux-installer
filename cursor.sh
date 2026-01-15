@@ -332,15 +332,30 @@ function get_version() {
     fi
 }
 
+function check_cursor_versions() {
+    local stable_info=$(get_download_info "stable")
+    local stable_version=$(echo "$stable_info" | grep "VERSION=" | sed 's/^VERSION=//')
+    local latest_info=$(get_download_info "latest")
+    local latest_version=$(echo "$latest_info" | grep "VERSION=" | sed 's/^VERSION=//')
+    echo "Stable Version: $stable_version"
+    echo "Latest Version: $latest_version"
+    echo "--------------------------------"
+    get_version
+    return 0
+}
+
 # Parse command-line arguments
 if [ "$1" == "--version" ] || [ "$1" == "-v" ]; then
     get_version
     exit $?
-elif [ "$1" == "--update" ]; then
+elif [ "$1" == "--check" ] || [ "$1" == "-c" ]; then
+    check_cursor_versions
+elif [ "$1" == "--update" ] || [ "$1" == "-u" ]; then
     update_cursor "$2"
 elif [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo "Usage: cursor [--update <stable|latest> | --version]"
-    echo "  --update: Update Cursor to the specified version"
+    echo "Usage: cursor [--check | --update <stable|latest> | --version]"
+    echo "  --check, -c: Show the stable and latest version of Cursor available for download"
+    echo "  --update, -u: Update Cursor to the specified version"
     echo "  --version, -v: Show the installed version of Cursor"
     exit 0
 else
