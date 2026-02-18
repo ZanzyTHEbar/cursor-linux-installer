@@ -32,23 +32,15 @@ done
 # Determine whether to use local cursor.sh or download from GitHub
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 LOCAL_CURSOR_SH="$SCRIPT_DIR/cursor.sh"
-
-# Repo URL parameters (override via env for release workflows)
+LIB_DIR="$HOME/.local/share/cursor-installer"
+LIB_PATH="$SCRIPT_DIR/lib.sh"
+SHARED_LIB="$LIB_DIR/lib.sh"
 REPO_OWNER=${REPO_OWNER:-watzon}
 REPO_BRANCH=${REPO_BRANCH:-main}
 REPO_NAME=${REPO_NAME:-cursor-linux-installer}
 BASE_RAW_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}"
-CURSOR_SCRIPT_URL="$BASE_RAW_URL/cursor.sh"
-LIB_DIR="$HOME/.local/share/cursor-installer"
-LIB_PATH="$SCRIPT_DIR/lib.sh"
-SHARED_LIB="$LIB_DIR/lib.sh"
-LIB_URL="$BASE_RAW_URL/lib.sh"
-SHIM_PATH="$SCRIPT_DIR/shim.sh"
-SHARED_SHIM="$LIB_DIR/shim.sh"
-SHIM_URL="$BASE_RAW_URL/shim.sh"
-SHIM_HELPER_LOCAL="$SCRIPT_DIR/scripts/ensure-shim.sh"
-SHIM_HELPER="$LIB_DIR/ensure-shim.sh"
-SHIM_HELPER_URL="$BASE_RAW_URL/scripts/ensure-shim.sh"
+LIB_URL="${BASE_RAW_URL}/lib.sh"
+CURSOR_SCRIPT_URL="${BASE_RAW_URL}/cursor.sh"
 
 # Source shared helpers (local repo, installed lib, or download)
 if [ -f "$LIB_PATH" ]; then
@@ -103,37 +95,7 @@ chmod +x "$CLI_PATH"
 log_ok "Cursor installer script has been placed in $CLI_PATH"
 
 log_step "Ensuring cursor shim..."
-SHIM_READY=true
-if [ -f "$SHIM_PATH" ]; then
-    cp "$SHIM_PATH" "$SHARED_SHIM"
-elif [ -f "$SHARED_SHIM" ]; then
-    :
-else
-    log_info "Downloading shim.sh from GitHub..."
-    if ! curl -fsSL "$SHIM_URL" -o "$SHARED_SHIM"; then
-        log_warn "Failed to download shim.sh; shim update skipped."
-        SHIM_READY=false
-    fi
-fi
-
-if [ "$SHIM_READY" = true ]; then
-    if [ -f "$SHIM_HELPER_LOCAL" ]; then
-        cp "$SHIM_HELPER_LOCAL" "$SHIM_HELPER"
-    else
-        log_info "Downloading ensure-shim.sh from GitHub..."
-        if ! curl -fsSL "$SHIM_HELPER_URL" -o "$SHIM_HELPER"; then
-            log_warn "Failed to download ensure-shim.sh; shim update skipped."
-            SHIM_READY=false
-        fi
-    fi
-fi
-
-if [ "$SHIM_READY" = true ]; then
-    chmod +x "$SHIM_HELPER" "$SHARED_SHIM" || true
-    if ! "$SHIM_HELPER"; then
-        log_warn "Shim update failed; continuing installation."
-    fi
-fi
+LOCAL_SHIM_PATH="$SCRIPT_DIR/shim.sh" LOCAL_SHIM_HELPER_PATH="$SCRIPT_DIR/scripts/ensure-shim.sh" sync_shim_assets && run_ensure_shim || log_warn "Shim update skipped or failed; continuing."
 
 # Check if ~/.local/bin is in PATH
 if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
