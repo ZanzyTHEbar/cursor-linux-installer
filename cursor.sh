@@ -21,6 +21,14 @@ fi
 
 CLI_NAME="cursor-installer"
 CLI_BIN="$HOME/.local/bin/$CLI_NAME"
+REPO_OWNER=${REPO_OWNER:-watzon}
+REPO_BRANCH=${REPO_BRANCH:-main}
+REPO_NAME=${REPO_NAME:-cursor-linux-installer}
+BASE_RAW_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}"
+SHARED_SHIM="$LIB_DIR/shim.sh"
+SHIM_URL="$BASE_RAW_URL/shim.sh"
+SHIM_HELPER="$LIB_DIR/ensure-shim.sh"
+SHIM_HELPER_URL="$BASE_RAW_URL/scripts/ensure-shim.sh"
 
 # Installation mode: 'appimage' (default) or 'extracted'
 # Can be set via CURSOR_INSTALL_MODE environment variable or --extract flag
@@ -45,6 +53,37 @@ function get_extracted_root() {
 function get_extraction_dir() {
     # Prefer ~/.local/share/cursor for extracted installations
     echo "$HOME/.local/share/cursor"
+}
+
+function ensure_shim() {
+    if [ -x "$SHIM_HELPER" ]; then
+        if ! "$SHIM_HELPER"; then
+            log_warn "Shim update failed; continuing."
+        fi
+        return 0
+    fi
+    if [ -f "$SHIM_HELPER" ]; then
+        if ! sh "$SHIM_HELPER"; then
+            log_warn "Shim update failed; continuing."
+        fi
+        return 0
+    fi
+    log_info "Shim helper not found; skipping shim update."
+    return 0
+}
+
+function refresh_shim_assets() {
+    log_step "Refreshing cursor shim assets..."
+    mkdir -p "$LIB_DIR"
+    if ! curl -fsSL "$SHIM_URL" -o "$SHARED_SHIM"; then
+        log_warn "Failed to download shim.sh; continuing."
+        return 0
+    fi
+    if ! curl -fsSL "$SHIM_HELPER_URL" -o "$SHIM_HELPER"; then
+        log_warn "Failed to download ensure-shim.sh; continuing."
+        return 0
+    fi
+    chmod +x "$SHIM_HELPER" "$SHARED_SHIM" || true
 }
 
 function check_fuse() {
@@ -289,6 +328,7 @@ EOF
 }
 
 function install_cursor_extracted() {
+    ensure_shim
     local install_dir="$1"
     local release_track=${2:-stable}
     local temp_file
@@ -438,6 +478,7 @@ function install_cursor_extracted() {
 }
 
 function install_cursor() {
+    ensure_shim
     local install_dir="$1"
     local release_track=${2:-stable} # Default to stable if not specified
     
@@ -663,6 +704,7 @@ EOF
 
 function update_cursor() {
     log_step "Updating Cursor..."
+    refresh_shim_assets
     local current_appimage
     current_appimage=$(find_cursor_appimage || true)
     local install_dir
